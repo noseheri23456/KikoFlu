@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:gbk_codec/gbk_codec.dart';
-import 'package:charset/charset.dart';
+import 'package:charset/charset.dart' hide gbk;
 
 /// 文件编码检测和解码工具类
 /// 支持 UTF-8、UTF-16LE、UTF-16BE、GBK、Shift-JIS、Latin1 等编码
