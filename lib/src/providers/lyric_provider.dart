@@ -151,7 +151,7 @@ class LyricController extends StateNotifier<LyricState> {
         final libraryLyricPath = await _findLyricInLibrary(track);
         if (libraryLyricPath != null) {
           print('[Lyric] 从字幕库加载: $libraryLyricPath');
-          await loadLyricFromLocalFile(libraryLyricPath);
+          await loadLyricFromLibrary(libraryLyricPath);
           return;
         }
       }
@@ -166,7 +166,7 @@ class LyricController extends StateNotifier<LyricState> {
           final libraryLyricPath = await _findLyricInLibrary(track);
           if (libraryLyricPath != null) {
             print('[Lyric] 从字幕库加载: $libraryLyricPath');
-            await loadLyricFromLocalFile(libraryLyricPath);
+            await loadLyricFromLibrary(libraryLyricPath);
             return;
           }
         }
@@ -276,39 +276,31 @@ class LyricController extends StateNotifier<LyricState> {
       // 确保数据库已初始化
       await SubtitleLibraryService.ensureInitialized();
 
-      // 获取字幕库根目录，用于将相对路径拼接为绝对路径
-      final libraryDir =
-          await SubtitleLibraryService.getSubtitleLibraryDirectory();
-      final libraryRoot = libraryDir.path;
-
       // 优先级1: 通过 workId 查询数据库
       if (workId != null) {
         final records =
             await SubtitleDatabase.instance.getFilesByWorkId(workId);
         if (records.isNotEmpty) {
-          String? bestMatchPath;
+          String? bestMatchRelativePath;
           double bestScore = 0.0;
 
           for (final record in records) {
             final (isMatch, score) =
                 SubtitleLibraryService.checkMatch(record.fileName, trackTitle);
             if (isMatch && score > bestScore) {
-              final absolutePath = record.absolutePath(libraryRoot);
-              // 验证文件是否仍存在（DB 可能过期）
-              if (!await File(absolutePath).exists()) continue;
               bestScore = score;
-              bestMatchPath = absolutePath;
+              bestMatchRelativePath = record.relativePath;
               if (score == 1.0) {
                 print(
                     '[Lyric] 在数据库中找到完美匹配 (workId=$workId): ${record.fileName}');
-                return absolutePath;
+                return record.relativePath;
               }
             }
           }
 
-          if (bestMatchPath != null) {
+          if (bestMatchRelativePath != null) {
             print('[Lyric] 在数据库中找到最佳匹配 (workId=$workId, score=$bestScore)');
-            return bestMatchPath;
+            return bestMatchRelativePath;
           }
         }
       }
@@ -317,27 +309,25 @@ class LyricController extends StateNotifier<LyricState> {
       final savedRecords = await SubtitleDatabase.instance
           .getFilesByCategory(SubtitleLibraryService.savedFolderName);
       if (savedRecords.isNotEmpty) {
-        String? bestMatchPath;
+        String? bestMatchRelativePath;
         double bestScore = 0.0;
 
         for (final record in savedRecords) {
           final (isMatch, score) =
               SubtitleLibraryService.checkMatch(record.fileName, trackTitle);
           if (isMatch && score > bestScore) {
-            final absolutePath = record.absolutePath(libraryRoot);
-            if (!await File(absolutePath).exists()) continue;
             bestScore = score;
-            bestMatchPath = absolutePath;
+            bestMatchRelativePath = record.relativePath;
             if (score == 1.0) {
               print('[Lyric] 在"已保存"中找到完美匹配: ${record.fileName}');
-              return absolutePath;
+              return record.relativePath;
             }
           }
         }
 
-        if (bestMatchPath != null) {
+        if (bestMatchRelativePath != null) {
           print('[Lyric] 在"已保存"中找到最佳匹配 (score=$bestScore)');
-          return bestMatchPath;
+          return bestMatchRelativePath;
         }
       }
 
@@ -346,6 +336,28 @@ class LyricController extends StateNotifier<LyricState> {
     } catch (e) {
       print('[Lyric] 字幕库查找出错: $e');
       return null;
+    }
+  }
+
+  /// 从字幕库加载内容
+  Future<void> loadLyricFromLibrary(String relativePath) async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final content = await SubtitleLibraryService.getSubtitleContent(relativePath);
+      if (content == null) {
+        state = state.copyWith(isLoading: false, error: '未找到内容');
+        return;
+      }
+
+      final lyrics = LyricParser.parse(content);
+      state = LyricState(
+        lyrics: lyrics,
+        isLoading: false,
+        lyricUrl: 'library://$relativePath',
+      );
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: '加载失败: $e');
     }
   }
 
