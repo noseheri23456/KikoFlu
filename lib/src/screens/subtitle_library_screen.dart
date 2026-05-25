@@ -302,11 +302,13 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   }
 
   Future<void> _deleteItem(Map<String, dynamic> item) async {
+    final title = (item['title'] ?? '未知') as String;
+    final path = (item['path'] ?? '') as String;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(S.of(context).confirmDelete),
-        content: Text(S.of(context).deleteItemConfirm(item['title'])),
+        content: Text(S.of(context).deleteItemConfirm(title)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: Text(S.of(context).cancel)),
           TextButton(onPressed: () => Navigator.pop(context, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: Text(S.of(context).delete)),
@@ -314,7 +316,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       ),
     );
     if (confirmed != true) return;
-    final success = await SubtitleLibraryService.delete(item['path']);
+    final success = await SubtitleLibraryService.delete(path);
     if (success) {
       await _loadFiles();
       SnackBarUtil.showSuccess(context, S.of(context).deleteSuccess);
@@ -322,8 +324,8 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   }
 
   Future<void> _loadLyricManually(Map<String, dynamic> item) async {
-    final title = item['title'] ?? '未知文件';
-    final path = item['path'] as String;
+    final title = (item['title'] ?? '未知文件') as String;
+    final path = (item['path'] ?? '') as String;
     final currentTrack = ref.read(currentTrackProvider).value;
 
     if (currentTrack == null) {
@@ -342,7 +344,8 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   List<Widget> _buildItemList(List<Map<String, dynamic>> items) {
     return items.map((item) {
       final isFolder = item['type'] == 'folder';
-      final path = item['path'] as String;
+      final path = (item['path'] ?? '') as String;
+      final title = (item['title'] ?? '') as String;
       final isSelected = _selectedPaths.contains(path);
 
       return InkWell(
@@ -363,7 +366,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  isFolder ? _localizedFolderTitle(context, item['title']) : item['title'],
+                  isFolder ? _localizedFolderTitle(context, title) : title,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -381,7 +384,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       title: path.split('/').last,
       textUrl: 'library://$path',
       workId: null,
-      onSavedToLibrary: _loadFiles,
+      onSavedToLibrary: () => _loadFiles(),
     )));
   }
 
