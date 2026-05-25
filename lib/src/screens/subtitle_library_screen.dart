@@ -1,15 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/subtitle_library_service.dart';
 import '../services/subtitle_database.dart';
-import '../providers/settings_provider.dart';
 import '../widgets/text_preview_screen.dart';
 import '../providers/audio_provider.dart';
 import '../providers/lyric_provider.dart';
-import '../widgets/responsive_dialog.dart';
 import '../utils/file_icon_utils.dart';
 import '../utils/snackbar_util.dart';
 import '../../l10n/app_localizations.dart';
@@ -44,15 +41,14 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   String? _errorMessage;
   LibraryStats? _stats;
   bool _isSelectionMode = false;
-  final Set<String> _selectedPaths = {}; // 选中的相对路径
+  final Set<String> _selectedPaths = {}; 
 
-  // 搜索相关
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  String _currentPath = ''; // 当前相对路径
-  final List<String> _navigationStack = []; // 导航栈
+  String _currentPath = ''; 
+  final List<String> _navigationStack = []; 
 
   @override
   void initState() {
@@ -64,15 +60,6 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  void _toggleSelectionMode() {
-    setState(() {
-      _isSelectionMode = !_isSelectionMode;
-      if (!_isSelectionMode) {
-        _selectedPaths.clear();
-      }
-    });
   }
 
   void _navigateTo(String relativePath) {
@@ -142,10 +129,10 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       setState(() {
         _files = results.map((r) => {
           'type': 'text',
-          'title': r['file_name'],
-          'path': r['relative_path'],
-          'size': r['file_size'] ?? 0,
-          'modified': r['modified_at'],
+          'title': r['file_name'] as String,
+          'path': r['relative_path'] as String,
+          'size': (r['file_size'] as int?) ?? 0,
+          'modified': r['modified_at'] as String?,
         }).toList();
         _isLoading = false;
       });
@@ -155,95 +142,6 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
         _errorMessage = '搜索失败';
       });
     }
-  }
-
-  Future<void> _importFile() async {
-    _showSimpleLoadingDialog(S.of(context).importingSubtitleFile);
-    final result = await SubtitleLibraryService.importSubtitleFile();
-    if (!mounted) return;
-    Navigator.of(context).pop();
-
-    if (result.success) {
-      await _loadFiles();
-      SnackBarUtil.showSuccess(context, result.message);
-    } else {
-      SnackBarUtil.showError(context, result.message);
-    }
-  }
-
-  void _showSimpleLoadingDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(message),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _importFolder() async {
-    final updateProgress = _showProgressDialog(S.of(context).preparingImport);
-    final result = await SubtitleLibraryService.importFolder(onProgress: updateProgress);
-    if (!mounted) return;
-    Navigator.of(context).pop();
-
-    if (result.success) {
-      await _loadFiles();
-      SnackBarUtil.showSuccess(context, result.message);
-    } else {
-      SnackBarUtil.showError(context, result.message);
-    }
-  }
-
-  Future<void> _importArchive() async {
-    final updateProgress = _showProgressDialog(S.of(context).preparingExtract);
-    final result = await SubtitleLibraryService.importArchive(onProgress: updateProgress);
-    if (!mounted) return;
-    Navigator.of(context).pop();
-
-    if (result.success) {
-      await _loadFiles();
-      SnackBarUtil.showSuccess(context, result.message);
-    } else {
-      SnackBarUtil.showError(context, result.message);
-    }
-  }
-
-  void Function(String)? _showProgressDialog(String initialMessage) {
-    final ValueNotifier<String> progressNotifier = ValueNotifier(initialMessage);
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: ValueListenableBuilder<String>(
-            valueListenable: progressNotifier,
-            builder: (context, message, child) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(message, textAlign: TextAlign.center),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    return (String message) {
-      if (mounted) progressNotifier.value = message;
-    };
   }
 
   void _showImportOptions() {
@@ -269,11 +167,56 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
               title: Text(S.of(context).importArchive),
               onTap: () { Navigator.pop(context); _importArchive(); },
             ),
-            const SizedBox(height: 8),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _importFile() async {
+    _showLoading();
+    final result = await SubtitleLibraryService.importSubtitleFile();
+    Navigator.pop(context);
+    if (result.success) {
+      _loadFiles();
+      SnackBarUtil.showSuccess(context, result.message);
+    } else {
+      SnackBarUtil.showError(context, result.message);
+    }
+  }
+
+  Future<void> _importFolder() async {
+    final progress = _showProgress(S.of(context).preparingImport);
+    final result = await SubtitleLibraryService.importFolder(onProgress: progress);
+    Navigator.pop(context);
+    if (result.success) {
+      _loadFiles();
+      SnackBarUtil.showSuccess(context, result.message);
+    } else {
+      SnackBarUtil.showError(context, result.message);
+    }
+  }
+
+  Future<void> _importArchive() async {
+    final progress = _showProgress(S.of(context).preparingExtract);
+    final result = await SubtitleLibraryService.importArchive(onProgress: progress);
+    Navigator.pop(context);
+    if (result.success) {
+      _loadFiles();
+      SnackBarUtil.showSuccess(context, result.message);
+    } else {
+      SnackBarUtil.showError(context, result.message);
+    }
+  }
+
+  void _showLoading() {
+    showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
+  }
+
+  void Function(String) _showProgress(String msg) {
+    final notifier = ValueNotifier(msg);
+    showDialog(context: context, barrierDismissible: false, builder: (context) => AlertDialog(content: ValueListenableBuilder(valueListenable: notifier, builder: (context, v, _) => Text(v))));
+    return (s) => notifier.value = s;
   }
 
   void _showFileOptions(Map<String, dynamic> item, String path) {
@@ -283,18 +226,8 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (item['type'] == 'text')
-              ListTile(
-                leading: const Icon(Icons.subtitles, color: Colors.orange),
-                title: Text(S.of(context).loadAsSubtitle),
-                onTap: () { Navigator.pop(context); _loadLyricManually(item); },
-              ),
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: Text(S.of(context).delete, style: const TextStyle(color: Colors.red)),
-              onTap: () { Navigator.pop(context); _deleteItem(item); },
-            ),
-            const SizedBox(height: 8),
+            ListTile(leading: const Icon(Icons.subtitles), title: Text(S.of(context).loadAsSubtitle), onTap: () { Navigator.pop(context); _loadLyricManually(item); }),
+            ListTile(leading: const Icon(Icons.delete, color: Colors.red), title: Text(S.of(context).delete), onTap: () { Navigator.pop(context); _deleteItem(item); }),
           ],
         ),
       ),
@@ -302,43 +235,22 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   }
 
   Future<void> _deleteItem(Map<String, dynamic> item) async {
-    final title = (item['title'] ?? '未知') as String;
+    final title = (item['title'] ?? '') as String;
     final path = (item['path'] ?? '') as String;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(S.of(context).confirmDelete),
-        content: Text(S.of(context).deleteItemConfirm(title)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(S.of(context).cancel)),
-          TextButton(onPressed: () => Navigator.pop(context, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: Text(S.of(context).delete)),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final success = await SubtitleLibraryService.delete(path);
-    if (success) {
-      await _loadFiles();
-      SnackBarUtil.showSuccess(context, S.of(context).deleteSuccess);
+    final ok = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: Text(S.of(context).confirmDelete), content: Text(S.of(context).deleteItemConfirm(title)), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: Text(S.of(context).cancel)), TextButton(onPressed: () => Navigator.pop(context, true), child: Text(S.of(context).delete))]));
+    if (ok == true) {
+      if (await SubtitleLibraryService.delete(path)) { _loadFiles(); SnackBarUtil.showSuccess(context, S.of(context).deleteSuccess); }
     }
   }
 
   Future<void> _loadLyricManually(Map<String, dynamic> item) async {
-    final title = (item['title'] ?? '未知文件') as String;
     final path = (item['path'] ?? '') as String;
-    final currentTrack = ref.read(currentTrackProvider).value;
-
-    if (currentTrack == null) {
-      SnackBarUtil.showError(context, S.of(context).noAudioCannotLoadSubtitle);
-      return;
-    }
-
+    final track = ref.read(currentTrackProvider).value;
+    if (track == null) { SnackBarUtil.showError(context, S.of(context).noAudioCannotLoadSubtitle); return; }
     try {
       await ref.read(lyricControllerProvider.notifier).loadLyricFromLibrary(path);
-      SnackBarUtil.showSuccess(context, S.of(context).subtitleLoadSuccess(title));
-    } catch (e) {
-      SnackBarUtil.showError(context, S.of(context).subtitleLoadFailed(e.toString()));
-    }
+      SnackBarUtil.showSuccess(context, S.of(context).subtitleLoadSuccess(item['title'] ?? ''));
+    } catch (e) { SnackBarUtil.showError(context, S.of(context).subtitleLoadFailed(e.toString())); }
   }
 
   List<Widget> _buildItemList(List<Map<String, dynamic>> items) {
@@ -346,51 +258,54 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       final isFolder = item['type'] == 'folder';
       final path = (item['path'] ?? '') as String;
       final title = (item['title'] ?? '') as String;
-      final isSelected = _selectedPaths.contains(path);
-
-      return InkWell(
-        onTap: () {
-          if (_isSelectionMode) {
-            setState(() => isSelected ? _selectedPaths.remove(path) : _selectedPaths.add(path));
-          } else if (isFolder) {
-            _navigateTo(path);
-          } else {
-            _previewFile(path);
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          child: Row(
-            children: [
-              Icon(isFolder ? Icons.folder : Icons.text_snippet, color: isFolder ? Colors.amber : Colors.grey),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  isFolder ? _localizedFolderTitle(context, title) : title,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (!isFolder) IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _showFileOptions(item, path)),
-              if (_isSelectionMode) Icon(isSelected ? Icons.check_circle : Icons.radio_button_unchecked, color: isSelected ? Colors.blue : Colors.grey),
-            ],
-          ),
-        ),
+      return ListTile(
+        leading: Icon(isFolder ? Icons.folder : Icons.text_snippet, color: isFolder ? Colors.amber : Colors.grey),
+        title: Text(isFolder ? _localizedFolderTitle(context, title) : title),
+        onTap: () => isFolder ? _navigateTo(path) : _previewFile(path),
+        trailing: isFolder ? null : IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _showFileOptions(item, path)),
       );
     }).toList();
   }
 
-  Future<void> _previewFile(String path) async {
-    Navigator.of(context).push(MaterialPageRoute(builder: (context) => TextPreviewScreen(
-      title: path.split('/').last,
-      textUrl: 'library://$path',
-      workId: null,
-      onSavedToLibrary: () => _loadFiles(),
-    )));
+  void _previewFile(String path) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (context) => TextPreviewScreen(title: path.split('/').last, textUrl: 'library://$path', workId: null, onSavedToLibrary: () => _loadFiles())));
   }
 
-  void _resetToRoot() {
-    setState(() { _currentPath = ''; _navigationStack.clear(); });
-    _loadFiles();
+  @override
+  Widget build(BuildContext context) {
+    final breadcrumbs = [InkWell(onTap: () => setState(() { _currentPath = ''; _navigationStack.clear(); _loadFiles(); }), child: Text(S.of(context).subtitleLibrary, style: const TextStyle(color: Colors.blue)))];
+    if (_currentPath.isNotEmpty) {
+      final parts = _currentPath.split('/');
+      String acc = '';
+      for (int i = 0; i < parts.length; i++) {
+        acc = acc.isEmpty ? parts[i] : '$acc/${parts[i]}';
+        final target = acc;
+        breadcrumbs.add(const Text(' > '));
+        breadcrumbs.add(InkWell(onTap: i == parts.length - 1 ? null : () => _jumpToPath(target), child: Text(parts[i])));
+      }
+    }
+
+    return PopScope(
+      canPop: _currentPath.isEmpty && _navigationStack.isEmpty,
+      onPopInvoked: (didPop) { if (!didPop) _navigateUp(); },
+      child: Scaffold(
+        floatingActionButton: FloatingActionButton(onPressed: _showImportOptions, child: const Icon(Icons.add)),
+        body: Column(
+          children: [
+            Container(padding: const EdgeInsets.all(8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                if (_isSearching) Expanded(child: TextField(controller: _searchController, decoration: const InputDecoration(hintText: '搜索...', border: InputBorder.none), onSubmitted: _handleSearch)) else const Spacer(),
+                IconButton(icon: Icon(_isSearching ? Icons.close : Icons.search), onPressed: () => setState(() { _isSearching = !_isSearching; if (!_isSearching) _loadFiles(); })),
+                IconButton(icon: const Icon(Icons.refresh), onPressed: () => _loadFiles(forceRefresh: true)),
+              ]),
+              SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: breadcrumbs)),
+            ])),
+            if (_navigationStack.isNotEmpty) ListTile(leading: const Icon(Icons.arrow_back), title: Text(S.of(context).back), onTap: _navigateUp),
+            Expanded(child: _isLoading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(onRefresh: () => _loadFiles(forceRefresh: true), child: ListView(children: _buildItemList(_files)))),
+          ],
+        ),
+      ),
+    );
   }
 
   void _jumpToPath(String path) {
@@ -405,62 +320,5 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       _currentPath = path;
     });
     _loadFiles();
-  }
-
-  Widget _buildTopBar() {
-    List<Widget> breadcrumbs = [
-      InkWell(onTap: _resetToRoot, child: Text(S.of(context).subtitleLibrary, style: const TextStyle(color: Colors.blue))),
-    ];
-    if (_currentPath.isNotEmpty) {
-      final parts = _currentPath.split('/');
-      String pathAcc = '';
-      for (int i = 0; i < parts.length; i++) {
-        pathAcc = pathAcc.isEmpty ? parts[i] : '$pathAcc/${parts[i]}';
-        final targetPath = pathAcc;
-        breadcrumbs.add(const Text(' > '));
-        breadcrumbs.add(InkWell(onTap: i == parts.length - 1 ? null : () => _jumpToPath(targetPath), child: Text(parts[i], style: TextStyle(fontWeight: i == parts.length - 1 ? FontWeight.bold : FontWeight.normal))));
-      }
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (_isSearching)
-                Expanded(child: TextField(controller: _searchController, decoration: const InputDecoration(hintText: '搜索字幕内容...', border: InputBorder.none), onSubmitted: _handleSearch))
-              else
-                const Spacer(),
-              IconButton(icon: Icon(_isSearching ? Icons.close : Icons.search), onPressed: () => setState(() { _isSearching = !_isSearching; if (!_isSearching) _loadFiles(); })),
-              IconButton(icon: const Icon(Icons.refresh), onPressed: () => _loadFiles(forceRefresh: true)),
-            ],
-          ),
-          SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: breadcrumbs)),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _currentPath.isEmpty && _navigationStack.isEmpty,
-      onPopInvoked: (didPop) { if (!didPop) _navigateUp(); },
-      child: Scaffold(
-        floatingActionButton: FloatingActionButton(onPressed: _showImportOptions, child: const Icon(Icons.add)),
-        body: Column(
-          children: [
-            _buildTopBar(),
-            if (_navigationStack.isNotEmpty) ListTile(leading: const Icon(Icons.arrow_back), title: Text(S.of(context).back), onTap: _navigateUp),
-            Expanded(
-              child: _isLoading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(onRefresh: () => _loadFiles(forceRefresh: true), child: ListView(children: _buildItemList(_files))),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

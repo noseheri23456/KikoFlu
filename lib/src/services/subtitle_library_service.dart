@@ -11,10 +11,6 @@ import '../utils/file_icon_utils.dart';
 /// 字幕库管理服务
 class SubtitleLibraryService {
   static const String _libraryFolderName = 'subtitle_library';
-  static const String _cacheFileName = 'library_cache.json';
-
-  // Windows 路径长度限制
-  static const int _maxPathLength = 240;
 
   // 自动分配目录名称
   static const String parsedFolderName = '已解析';
@@ -129,7 +125,6 @@ class SubtitleLibraryService {
   static Future<void> _initDatabase() async {
     if (_dbInitialized) return;
     final libraryDir = await getSubtitleLibraryDirectory();
-    await _migrateOldFormatFolders(libraryDir);
     final fileCount = await SubtitleDatabase.instance.getFileCount();
     if (fileCount == 0) await _rebuildDatabase(libraryDir);
     _dbInitialized = true;
@@ -220,7 +215,7 @@ class SubtitleLibraryService {
   static Future<ImportResult> importSubtitleFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['vtt', 'srt', 'lrc', 'txt', 'ass', 'ssa'], allowMultiple: true);
-      if (result == null) return ImportResult(success: false, message: '未选择文件');
+      if (result == null || result.files.isEmpty) return ImportResult(success: false, message: '未选择文件');
       int count = 0;
       for (final f in result.files) {
         if (f.path == null) continue;
@@ -260,11 +255,10 @@ class SubtitleLibraryService {
         final bytes = await entity.readAsBytes();
         final fileName = entity.path.split(Platform.pathSeparator).last;
         final relPath = relativePath.isEmpty ? fileName : '$relativePath/$fileName';
-        // 自动归类逻辑
         String category = unknownFolderName;
-        String finalRelPath = '$category/$relPath';
         final workId = _extractWorkIdFromPath(relPath);
         if (workId != null) category = parsedFolderName;
+        final finalRelPath = '$category/$relPath';
         
         await SubtitleDatabase.instance.insertFile(SubtitleFileRecord(
           fileName: fileName, relativePath: finalRelPath, parentPath: _extractParentPath(finalRelPath),
@@ -280,7 +274,7 @@ class SubtitleLibraryService {
   static Future<ImportResult> importArchive({Function(String)? onProgress}) async {
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['zip']);
-      if (result == null || result.files.first.path == null) return ImportResult(success: false, message: '未选择压缩包');
+      if (result == null || result.files.isEmpty || result.files.first.path == null) return ImportResult(success: false, message: '未选择压缩包');
       final bytes = await File(result.files.first.path!).readAsBytes();
       final stats = _ImportStats();
       await _processArchiveBytes(bytes, 'zip', '', stats, depth: 0, onProgress: onProgress);
@@ -360,10 +354,6 @@ class SubtitleLibraryService {
     final dir = Directory('${downloadDir.path}/$_libraryFolderName');
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
-  }
-
-  static Future<void> _migrateOldFormatFolders(Directory libraryDir) async {
-    // 简化迁移逻辑：只在初次运行时调用，用户说未来直接重新导入
   }
 }
 
