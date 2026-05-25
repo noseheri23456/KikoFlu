@@ -40,7 +40,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   LibraryStats? _stats;
-  bool _isSelectionMode = false;
+  final bool _isSelectionMode = false;
   final Set<String> _selectedPaths = {}; 
 
   bool _isSearching = false;
@@ -70,7 +70,6 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       _searchQuery = '';
       _searchController.clear();
       _selectedPaths.clear();
-      _isSelectionMode = false;
     });
     _loadFiles();
   }
@@ -80,7 +79,6 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       setState(() {
         _currentPath = _navigationStack.removeLast();
         _selectedPaths.clear();
-        _isSelectionMode = false;
       });
       _loadFiles();
     }
@@ -215,7 +213,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
 
   void Function(String) _showProgress(String msg) {
     final notifier = ValueNotifier(msg);
-    showDialog(context: context, barrierDismissible: false, builder: (context) => AlertDialog(content: ValueListenableBuilder(valueListenable: notifier, builder: (context, v, _) => Text(v))));
+    showDialog(context: context, barrierDismissible: false, builder: (context) => AlertDialog(content: ValueListenableBuilder(valueListenable: notifier, builder: (context, v, _) => Text(v.toString()))));
     return (s) => notifier.value = s;
   }
 
@@ -273,7 +271,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final breadcrumbs = [InkWell(onTap: () => setState(() { _currentPath = ''; _navigationStack.clear(); _loadFiles(); }), child: Text(S.of(context).subtitleLibrary, style: const TextStyle(color: Colors.blue)))];
+    final breadcrumbs = <Widget>[InkWell(onTap: () => setState(() { _currentPath = ''; _navigationStack.clear(); _loadFiles(); }), child: Text(S.of(context).subtitleLibrary, style: const TextStyle(color: Colors.blue)))];
     if (_currentPath.isNotEmpty) {
       final parts = _currentPath.split('/');
       String acc = '';
@@ -285,9 +283,12 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       }
     }
 
-    return PopScope(
-      canPop: _currentPath.isEmpty && _navigationStack.isEmpty,
-      onPopInvoked: (didPop) { if (!didPop) _navigateUp(); },
+    return WillPopScope(
+      onWillPop: () async {
+        if (_currentPath.isEmpty && _navigationStack.isEmpty) return true;
+        _navigateUp();
+        return false;
+      },
       child: Scaffold(
         floatingActionButton: FloatingActionButton(onPressed: _showImportOptions, child: const Icon(Icons.add)),
         body: Column(

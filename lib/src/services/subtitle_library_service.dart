@@ -181,7 +181,7 @@ class SubtitleLibraryService {
 
   static String _decodeText(List<int> bytes) {
     try { return utf8.decode(bytes); } catch (_) {
-      try { return gbk.decode(bytes); } catch (_) { return latin1.decode(bytes); }
+      try { return gbk_bytes.decode(bytes); } catch (_) { return latin1.decode(bytes); }
     }
   }
 
@@ -289,7 +289,7 @@ class SubtitleLibraryService {
     for (final file in archive.files) {
       if (!file.isFile) continue;
       String name = file.name;
-      try { name = gbk.decode(latin1.encode(file.name)); } catch (_) {}
+      try { name = gbk_bytes.decode(latin1.encode(file.name)); } catch (_) {}
       final fileName = name.split('/').last;
       final content = file.content as List<int>;
       if (fileName.toLowerCase().endsWith('.zip')) {
