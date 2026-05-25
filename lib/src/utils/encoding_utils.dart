@@ -72,11 +72,11 @@ class EncodingUtils {
     // 5. 尝试 GBK 解码（简体中文）
     // GBK 比 Shift-JIS 优先，因为字幕文件更多是中文
     try {
-      final decoded = gbk_bytes.decode(bytes);
+      final decoded = gbk.decode(bytes);
       // 验证：检查是否有替换字符
       if (decoded.isNotEmpty &&
           !decoded.contains('\uFFFD') &&
-          !decoded.contains('�')) {
+          !decoded.contains('')) {
         // 额外验证：检查是否有合理的中文字符比例
         if (_hasReasonableContent(decoded)) {
           return (decoded, 'GBK');
@@ -92,7 +92,7 @@ class EncodingUtils {
       // 验证：检查是否有替换字符
       if (decoded.isNotEmpty &&
           !decoded.contains('\uFFFD') &&
-          !decoded.contains('�')) {
+          !decoded.contains('')) {
         if (_hasReasonableContent(decoded)) {
           return (decoded, 'Shift-JIS');
         }
@@ -181,7 +181,7 @@ class EncodingUtils {
           }
           return bytes;
         case 'GBK':
-          return gbk_bytes.encode(content);
+          return gbk.encode(content);
         case 'Shift-JIS':
           return shiftJis.encode(content);
         case 'Latin1':

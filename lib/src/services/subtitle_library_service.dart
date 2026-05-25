@@ -181,7 +181,7 @@ class SubtitleLibraryService {
 
   static String _decodeText(List<int> bytes) {
     try { return utf8.decode(bytes); } catch (_) {
-      try { return gbk_bytes.decode(bytes); } catch (_) { return latin1.decode(bytes); }
+      try { return gbk.decode(bytes); } catch (_) { return latin1.decode(bytes); }
     }
   }
 
@@ -289,7 +289,7 @@ class SubtitleLibraryService {
     for (final file in archive.files) {
       if (!file.isFile) continue;
       String name = file.name;
-      try { name = gbk_bytes.decode(latin1.encode(file.name)); } catch (_) {}
+      try { name = gbk.decode(latin1.encode(file.name)); } catch (_) {}
       final fileName = name.split('/').last;
       final content = file.content as List<int>;
       if (fileName.toLowerCase().endsWith('.zip')) {
@@ -354,6 +354,18 @@ class SubtitleLibraryService {
     final dir = Directory('${downloadDir.path}/$_libraryFolderName');
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
+  }
+
+  /// 兼容旧代码：获取已解析目录下的文件夹名列表
+  static Future<List<String>> getParsedSubtitleFolders() async {
+    await _ensureDatabase();
+    return await SubtitleDatabase.instance.getParsedFolderNames(parsedFolderName);
+  }
+
+  /// 兼容旧代码：刷新特定目录的缓存
+  static Future<void> refreshDirectoryCache(String directoryPath) async {
+    await _ensureDatabase();
+    _cacheUpdateController.add(null);
   }
 }
 

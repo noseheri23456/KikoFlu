@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart'; // 添加此导入以支持 CupertinoPageTransitionsBuilder
 import '../providers/theme_provider.dart';
 
 class AppTheme {
