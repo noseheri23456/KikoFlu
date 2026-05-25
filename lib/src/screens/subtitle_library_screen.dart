@@ -63,6 +63,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   }
 
   void _navigateTo(String relativePath) {
+    if (!mounted) return;
     setState(() {
       _navigationStack.add(_currentPath);
       _currentPath = relativePath;
@@ -75,16 +76,16 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   }
 
   void _navigateUp() {
-    if (_navigationStack.isNotEmpty) {
-      setState(() {
-        _currentPath = _navigationStack.removeLast();
-        _selectedPaths.clear();
-      });
-      _loadFiles();
-    }
+    if (!mounted || _navigationStack.isEmpty) return;
+    setState(() {
+      _currentPath = _navigationStack.removeLast();
+      _selectedPaths.clear();
+    });
+    _loadFiles();
   }
 
   Future<void> _loadFiles({bool forceRefresh = false}) async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -98,12 +99,14 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       final items = await SubtitleLibraryService.getItemsInPath(_currentPath);
       final stats = await SubtitleLibraryService.getStats();
 
+      if (!mounted) return;
       setState(() {
         _files = items;
         _stats = stats;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = S.of(context).loadFailed;
         _isLoading = false;
@@ -117,6 +120,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _searchQuery = query;
@@ -124,6 +128,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
 
     try {
       final results = await SubtitleDatabase.instance.searchContent(query);
+      if (!mounted) return;
       setState(() {
         _files = results.map((r) => {
           'type': 'text',
@@ -135,6 +140,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = '搜索失败';
@@ -174,6 +180,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   Future<void> _importFile() async {
     _showLoading();
     final result = await SubtitleLibraryService.importSubtitleFile();
+    if (!mounted) return;
     Navigator.pop(context);
     if (result.success) {
       _loadFiles();
@@ -186,6 +193,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   Future<void> _importFolder() async {
     final progress = _showProgress(S.of(context).preparingImport);
     final result = await SubtitleLibraryService.importFolder(onProgress: progress);
+    if (!mounted) return;
     Navigator.pop(context);
     if (result.success) {
       _loadFiles();
@@ -198,6 +206,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   Future<void> _importArchive() async {
     final progress = _showProgress(S.of(context).preparingExtract);
     final result = await SubtitleLibraryService.importArchive(onProgress: progress);
+    if (!mounted) return;
     Navigator.pop(context);
     if (result.success) {
       _loadFiles();
@@ -237,18 +246,28 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
     final path = (item['path'] ?? '') as String;
     final ok = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: Text(S.of(context).confirmDelete), content: Text(S.of(context).deleteItemConfirm(title)), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: Text(S.of(context).cancel)), TextButton(onPressed: () => Navigator.pop(context, true), child: Text(S.of(context).delete))]));
     if (ok == true) {
-      if (await SubtitleLibraryService.delete(path)) { _loadFiles(); SnackBarUtil.showSuccess(context, S.of(context).deleteSuccess); }
+      final success = await SubtitleLibraryService.delete(path);
+      if (!mounted) return;
+      if (success) { _loadFiles(); SnackBarUtil.showSuccess(context, S.of(context).deleteSuccess); }
     }
   }
 
   Future<void> _loadLyricManually(Map<String, dynamic> item) async {
     final path = (item['path'] ?? '') as String;
     final track = ref.read(currentTrackProvider).value;
-    if (track == null) { SnackBarUtil.showError(context, S.of(context).noAudioCannotLoadSubtitle); return; }
+    if (track == null) {
+      if (!mounted) return;
+      SnackBarUtil.showError(context, S.of(context).noAudioCannotLoadSubtitle); 
+      return; 
+    }
     try {
       await ref.read(lyricControllerProvider.notifier).loadLyricFromLibrary(path);
+      if (!mounted) return;
       SnackBarUtil.showSuccess(context, S.of(context).subtitleLoadSuccess(item['title'] ?? ''));
-    } catch (e) { SnackBarUtil.showError(context, S.of(context).subtitleLoadFailed(e.toString())); }
+    } catch (e) {
+      if (!mounted) return;
+      SnackBarUtil.showError(context, S.of(context).subtitleLoadFailed(e.toString())); 
+    }
   }
 
   List<Widget> _buildItemList(List<Map<String, dynamic>> items) {
@@ -271,7 +290,11 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final breadcrumbs = <Widget>[InkWell(onTap: () => setState(() { _currentPath = ''; _navigationStack.clear(); _loadFiles(); }), child: Text(S.of(context).subtitleLibrary, style: const TextStyle(color: Colors.blue)))];
+    final breadcrumbs = <Widget>[InkWell(onTap: () {
+      if (!mounted) return;
+      setState(() { _currentPath = ''; _navigationStack.clear(); _loadFiles(); });
+    }, child: Text(S.of(context).subtitleLibrary, style: const TextStyle(color: Colors.blue)))];
+    
     if (_currentPath.isNotEmpty) {
       final parts = _currentPath.split('/');
       String acc = '';
@@ -296,7 +319,10 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
             Container(padding: const EdgeInsets.all(8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 if (_isSearching) Expanded(child: TextField(controller: _searchController, decoration: const InputDecoration(hintText: '搜索...', border: InputBorder.none), onSubmitted: _handleSearch)) else const Spacer(),
-                IconButton(icon: Icon(_isSearching ? Icons.close : Icons.search), onPressed: () => setState(() { _isSearching = !_isSearching; if (!_isSearching) _loadFiles(); })),
+                IconButton(icon: Icon(_isSearching ? Icons.close : Icons.search), onPressed: () {
+                  if (!mounted) return;
+                  setState(() { _isSearching = !_isSearching; if (!_isSearching) _loadFiles(); });
+                }),
                 IconButton(icon: const Icon(Icons.refresh), onPressed: () => _loadFiles(forceRefresh: true)),
               ]),
               SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: breadcrumbs)),
@@ -310,6 +336,7 @@ class _SubtitleLibraryScreenState extends ConsumerState<SubtitleLibraryScreen> {
   }
 
   void _jumpToPath(String path) {
+    if (!mounted) return;
     setState(() {
       final parts = path.split('/');
       _navigationStack.clear();

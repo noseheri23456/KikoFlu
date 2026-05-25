@@ -89,9 +89,11 @@ class SubtitleDatabase {
     );
   }
 
+  bool _ftsSupported = true;
+
   Future<void> _createDB(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE subtitle_files (
+      CREATE TABLE IF NOT EXISTS subtitle_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         file_name TEXT NOT NULL,
         relative_path TEXT NOT NULL UNIQUE,
@@ -106,29 +108,27 @@ class SubtitleDatabase {
       )
     ''');
 
-    await db.execute(
-        'CREATE INDEX idx_files_parent ON subtitle_files(parent_path)');
-    await db.execute(
-        'CREATE INDEX idx_files_work_id ON subtitle_files(work_id)');
-    await db.execute(
-        'CREATE INDEX idx_files_category ON subtitle_files(category)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_files_parent ON subtitle_files(parent_path)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_files_work_id ON subtitle_files(work_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_files_category ON subtitle_files(category)');
 
-    // FTS5 全文搜索虚拟表 (需要 sqlite 支持 fts5)
     try {
       await db.execute('''
-        CREATE VIRTUAL TABLE subtitle_search USING fts5(
+        CREATE VIRTUAL TABLE IF NOT EXISTS subtitle_search USING fts5(
           file_id UNINDEXED,
           file_name,
           content_text,
           tokenize='unicode61'
         )
       ''');
+      _ftsSupported = true;
     } catch (e) {
-      print('[SubtitleDatabase] FTS5 不受支持，跳过全文搜索表创建: $e');
+      _ftsSupported = false;
+      print('[SubtitleDatabase] 当前环境不支持 FTS5: $e');
     }
 
     await db.execute('''
-      CREATE TABLE library_meta (
+      CREATE TABLE IF NOT EXISTS library_meta (
         key TEXT PRIMARY KEY,
         value TEXT
       )
@@ -137,8 +137,7 @@ class SubtitleDatabase {
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 3) {
-      // v3: 增加 content 和 parent_path，支持全文搜索
-      // 因为用户不考虑迁移，我们直接清空重建，或者简单点直接删表重建
+      // 简单处理：如果是旧版本升级，直接删除旧表重新创建
       await db.execute('DROP TABLE IF EXISTS subtitle_files');
       await db.execute('DROP TABLE IF EXISTS subtitle_search');
       await _createDB(db, newVersion);
@@ -147,13 +146,12 @@ class SubtitleDatabase {
 
   // ==================== CRUD ====================
 
-  /// 插入记录并同步索引
   Future<int> insertFile(SubtitleFileRecord record, {String? plainText}) async {
     final db = await database;
     final id = await db.insert('subtitle_files', record.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
 
-    if (plainText != null) {
+    if (_ftsSupported && plainText != null) {
       try {
         await db.insert('subtitle_search', {
           'file_id': id,
@@ -165,21 +163,6 @@ class SubtitleDatabase {
     return id;
   }
 
-  /// 批量插入（事务）
-  Future<void> insertFiles(List<SubtitleFileRecord> records) async {
-    if (records.isEmpty) return;
-    final db = await database;
-    await db.transaction((txn) async {
-      final batch = txn.batch();
-      for (final record in records) {
-        batch.insert('subtitle_files', record.toMap(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      await batch.commit(noResult: true);
-    });
-  }
-
-  /// 按相对路径删除并同步索引
   Future<void> deleteByRelativePath(String relativePath) async {
     final db = await database;
     final files = await db.query('subtitle_files',
@@ -187,67 +170,34 @@ class SubtitleDatabase {
     if (files.isNotEmpty) {
       final id = files.first['id'];
       await db.delete('subtitle_files', where: 'id = ?', whereArgs: [id]);
-      try {
-        await db.delete('subtitle_search',
-            where: 'file_id = ?', whereArgs: [id]);
-      } catch (_) {}
+      if (_ftsSupported) {
+        try {
+          await db.delete('subtitle_search', where: 'file_id = ?', whereArgs: [id]);
+        } catch (_) {}
+      }
     }
   }
 
-  // ==================== 查询 (懒加载核心) ====================
-
-  /// 获取指定目录下的文件
-  Future<List<SubtitleFileRecord>> getFilesByParent(String parentPath) async {
-    final db = await database;
-    final results = await db.query('subtitle_files',
-        where: 'parent_path = ?',
-        whereArgs: [parentPath],
-        orderBy: 'file_name');
-    return results.map((m) => SubtitleFileRecord.fromMap(m)).toList();
-  }
-
-  /// 获取指定目录下的子目录名
-  Future<List<String>> getSubFolders(String parentPath) async {
-    final db = await database;
-    // 技巧：查询 parent_path 以当前路径开头的记录，提取下一级目录
-    final prefix = parentPath.isEmpty ? '' : (parentPath.endsWith('/') ? parentPath : '$parentPath/');
-    
-    // 我们需要提取 relative_path 中 prefix 之后的第一段
-    final results = await db.rawQuery('''
-      SELECT DISTINCT 
-        CASE 
-          WHEN INSTR(SUBSTR(relative_path, LENGTH(?) + 1), '/') > 0
-          THEN SUBSTR(SUBSTR(relative_path, LENGTH(?) + 1), 1, 
-               INSTR(SUBSTR(relative_path, LENGTH(?) + 1), '/') - 1)
-          ELSE ''
-        END as folder_name
-      FROM subtitle_files 
-      WHERE relative_path LIKE ?
-    ''', [prefix, prefix, '$prefix%']);
-
-    return results
-        .map((r) => r['folder_name'] as String)
-        .where((name) => name.isNotEmpty)
-        .toList();
-  }
-
-  /// 全文搜索
   Future<List<Map<String, dynamic>>> searchContent(String query) async {
+    if (!_ftsSupported) {
+      // 如果不支持 FTS，退回到 LIKE 搜索
+      final db = await database;
+      return await db.query('subtitle_files',
+          where: 'file_name LIKE ?',
+          whereArgs: ['%$query%'],
+          limit: 100);
+    }
     final db = await database;
     try {
       return await db.rawQuery('''
-        SELECT f.id, f.file_name, f.relative_path, f.category, f.work_id
+        SELECT f.id, f.file_name, f.relative_path, f.category, f.work_id, f.file_size, f.modified_at
         FROM subtitle_search s
         JOIN subtitle_files f ON s.file_id = f.id
         WHERE subtitle_search MATCH ?
         ORDER BY rank
       ''', [query]);
     } catch (e) {
-      // 如果 FTS5 不可用，退回到简单的文件名搜索
-      return await db.query('subtitle_files',
-          where: 'file_name LIKE ?',
-          whereArgs: ['%$query%'],
-          limit: 100);
+      return [];
     }
   }
 
